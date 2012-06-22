@@ -1,0 +1,143 @@
+/*
+ * Copyright (c) 2012 Bernhard Firner and Rutgers University
+ * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+ * or visit http://www.gnu.org/licenses/gpl-2.0.html
+ */
+
+/*******************************************************************************
+ * This file defines a class that simplifies connecting to the world model
+ * as a solver.
+ ******************************************************************************/
+
+#ifndef __SOLVER_WORLD_CONNECTION_HPP__
+#define __SOLVER_WORLD_CONNECTION_HPP__
+
+//Owl libcpp includes
+#include <owl/grail_sock_server.hpp>
+#include <owl/simple_sockets.hpp>
+#include <owl/world_model_protocol.hpp>
+
+#include <map>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
+/**
+ * Connection from a solver to the world model.
+ */
+class SolverWorldModel {
+  public:
+    ///An attribute update
+    struct AttrUpdate {
+      u16string type;
+      world_model::grail_time time;
+      world_model::URI target;
+      std::vector<uint8_t> data;
+    };
+    typedef std::map<world_model::URI, std::vector<world_model::Attribute>> world_state;
+  private:
+    ///On-demand requests from clients that the world model forwards
+    struct OnDemandArgs {
+      u16string request;
+      regex_t exp;
+      bool valid;
+      bool operator<(const OnDemandArgs& other) const {
+        return request < other.request;
+      }
+    };
+    ///Send a handshake and a type declaration message.
+    bool reconnect();
+
+    ///Thread and variables to monitor on-demand request status.
+    std::mutex trans_mutex;
+    std::map<uint32_t, std::multiset<OnDemandArgs>> on_demand_on;
+    std::thread on_demand_tracker;
+    bool interrupted;
+    bool running;
+
+    void trackOnDemands();
+
+    std::vector<world_model::solver::AliasType> types;
+    std::map<u16string, uint32_t> aliases;
+    //This solver's origin string
+    std::u16string origin;
+
+    ClientSocket s;
+    GRAILSockServer ss;
+    std::string ip;
+    uint16_t port;
+
+    bool _connected;
+  public:
+
+    /*
+     * Connect to the world model at the given ip address and port and
+     * immediately announce the provided types.
+     * OnDemand types are indicated with a true boolean value in their pairs.
+     */
+    SolverWorldModel(std::string ip, uint16_t port, std::vector<std::pair<u16string, bool>>& types, std::u16string origin);
+    ~SolverWorldModel();
+
+    /*
+     * Return the status of the connection.
+     */
+    bool connected();
+
+		/*
+		 * Register new solution types.
+		 */
+		void addTypes(std::vector<std::pair<u16string, bool>>& new_types);
+
+    /*
+     * Send new data to the world model.
+     * If create_uris is true then any URIs that are named as targets but that
+     * do not exist in the world model will be created so that these
+     * solutions can be pushed. If create_uris is false then those
+     * solutions will not be pushed.
+     */
+    void sendData(std::vector<AttrUpdate>& solution, bool create_uris = true);
+
+    /*
+     * Create a new URI in the world model.
+     */
+    void createURI(world_model::URI uri, world_model::grail_time created);
+
+    /*
+     * Expire a world_model::URI in the world model.
+     */
+    void expireURI(world_model::URI uri, world_model::grail_time expires);
+
+    /*
+     * Delete a URI from the world model.
+     */
+    void deleteURI(world_model::URI uri);
+
+    /*
+     * Expire an attribute from the world model.
+     */
+    void expireURIAttribute(world_model::URI uri, std::u16string name, world_model::grail_time expires);
+
+    /*
+     * Delete an attribute from the world model.
+     */
+    void deleteURIAttribute(world_model::URI uri, std::u16string name);
+};
+
+#endif
+

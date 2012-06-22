@@ -6,12 +6,26 @@ set (LibOwlSolver_VERSION_MAJOR 1)
 set (LibOwlSolver_VERSION_MINOR 0)
 set (LibOwlSolver_VERSION_REVISION 0)
 
-set(CMAKE_CXX_FLAGS "-O2 -std=c++0x -Wall -Wextra -Wno-sign-compare")
+# Adding the link command to libowl in this line.
+# Should technically run a bunch of cmake scripts to discover where libowl
+# was installed.
+set(CMAKE_CXX_FLAGS "-O2 -std=c++0x -Wall -Wextra -Wno-sign-compare -lowl")
+
+FIND_PATH(OWL_INC_DIR NAMES owl PATHS /usr/include /usr/local/include)
+IF(NOT OWL_INC_DIR)
+  MESSAGE(FATAL_ERROR "Unable to find libOwl installation!")
+ELSE(NOT OWL_INC_DIR)
+  #Truncate the search path
+  STRING(REGEX REPLACE "/owl" "" OWL_INC_DIR ${OWL_INC_DIR})
+ENDIF(NOT OWL_INC_DIR)
 
 #SUBDIRS(src)
 #add_subdirectory ("${PROJECT_SOURCE_DIR}/src")
 
-include_directories ("${LibOwlSolverC++_SOURCE_DIR}/include")
+#include(findowl.cmake)
+
+include_directories ("${LibOwlSolverC++_SOURCE_DIR}/include" "${OWL_INC_DIR}")
+
 add_subdirectory (src)
 add_subdirectory (include)
 
