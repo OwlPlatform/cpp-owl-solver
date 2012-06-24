@@ -27,7 +27,7 @@
 #define __CLIENT_WORLD_CONNECTION_HPP__
 
 //Owl libcpp includes
-#include <owl/grail_sock_server.hpp>
+#include <owl/message_receiver.hpp>
 #include <owl/simple_sockets.hpp>
 #include <owl/world_model_protocol.hpp>
 
@@ -195,7 +195,7 @@ class ClientWorldConnection {
     //This mutex should be locked before sending data out through the socket
     std::mutex out_mutex;
     ClientSocket s;
-    GRAILSockServer ss;
+    MessageReceiver ss;
     std::string ip;
     uint16_t port;
     std::map<uint32_t, std::u16string> known_attributes;

@@ -27,16 +27,20 @@
 #define __SOLVER_WORLD_CONNECTION_HPP__
 
 //Owl libcpp includes
-#include <owl/grail_sock_server.hpp>
+#include <owl/message_receiver.hpp>
 #include <owl/simple_sockets.hpp>
 #include <owl/world_model_protocol.hpp>
 
 #include <map>
+#include <set>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <sys/types.h>
+#include <regex.h>
 
 /**
  * Connection from a solver to the world model.
@@ -45,7 +49,7 @@ class SolverWorldModel {
   public:
     ///An attribute update
     struct AttrUpdate {
-      u16string type;
+      std::u16string type;
       world_model::grail_time time;
       world_model::URI target;
       std::vector<uint8_t> data;
@@ -54,7 +58,7 @@ class SolverWorldModel {
   private:
     ///On-demand requests from clients that the world model forwards
     struct OnDemandArgs {
-      u16string request;
+      std::u16string request;
       regex_t exp;
       bool valid;
       bool operator<(const OnDemandArgs& other) const {
@@ -74,12 +78,12 @@ class SolverWorldModel {
     void trackOnDemands();
 
     std::vector<world_model::solver::AliasType> types;
-    std::map<u16string, uint32_t> aliases;
+    std::map<std::u16string, uint32_t> aliases;
     //This solver's origin string
     std::u16string origin;
 
     ClientSocket s;
-    GRAILSockServer ss;
+    MessageReceiver ss;
     std::string ip;
     uint16_t port;
 
@@ -91,7 +95,7 @@ class SolverWorldModel {
      * immediately announce the provided types.
      * OnDemand types are indicated with a true boolean value in their pairs.
      */
-    SolverWorldModel(std::string ip, uint16_t port, std::vector<std::pair<u16string, bool>>& types, std::u16string origin);
+    SolverWorldModel(std::string ip, uint16_t port, std::vector<std::pair<std::u16string, bool>>& types, std::u16string origin);
     ~SolverWorldModel();
 
     /*
@@ -102,7 +106,7 @@ class SolverWorldModel {
 		/*
 		 * Register new solution types.
 		 */
-		void addTypes(std::vector<std::pair<u16string, bool>>& new_types);
+		void addTypes(std::vector<std::pair<std::u16string, bool>>& new_types);
 
     /*
      * Send new data to the world model.

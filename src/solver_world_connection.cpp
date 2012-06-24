@@ -23,6 +23,17 @@
  * as a solver.
  ******************************************************************************/
 
+#include "solver_world_connection.hpp"
+
+#include <algorithm>
+#include <iostream>
+#include <string>
+#include <tuple>
+#include <vector>
+
+#include <sys/types.h>
+#include <sys/socket.h>
+
 //Send a handshake and a type declaration message.
 bool SolverWorldModel::reconnect() {
   //Reset connection status and set to true after the handshake.
@@ -91,13 +102,14 @@ void SolverWorldModel::trackOnDemands() {
           world_model::solver::decodeStartOnDemand(in_buff);
         std::unique_lock<std::mutex> lck(trans_mutex);
         for (auto I = trans.begin(); I != trans.end(); ++I) {
-          std::cerr<<"OnDemand "<<std::get<0>(*I)<<" has "<<get<1>(*I).size()<<" URI requests.\n";
-          for (auto request = get<1>(*I).begin(); request != get<1>(*I).end(); ++request) {
+          std::cerr<<"OnDemand "<<std::get<0>(*I)<<" has "<<std::get<1>(*I).size()<<" URI requests.\n";
+          std::vector<std::u16string>& requests = std::get<1>(*I);
+          for (std::u16string& request : requests) {
             //Store the regex pattern sent by the world model.
-            std::cerr<<"Enabling on_demand: "<<std::get<0>(*I)<<" with string "<<toString(*request)<<'\n';
+            std::cerr<<"Enabling on_demand: "<<std::get<0>(*I)<<" with string "<<toString(request)<<'\n';
 
             OnDemandArgs ta;
-            ta.request = *request;
+            ta.request = request;
             int err = regcomp(&ta.exp, toString(ta.request).c_str(), REG_EXTENDED);
             if (0 != err) {
               ta.valid = false;
@@ -115,14 +127,15 @@ void SolverWorldModel::trackOnDemands() {
           world_model::solver::decodeStopOnDemand(in_buff);
         std::unique_lock<std::mutex> lck(trans_mutex);
         for (auto I = trans.begin(); I != trans.end(); ++I) {
-          for (auto request = get<1>(*I).begin(); request != get<1>(*I).end(); ++request) {
+          uint32_t attr_name = std::get<0>(*I);
+          std::vector<std::u16string>& requests = std::get<1>(*I);
+          for (std::u16string& request : requests) {
             //Remove the regex that was sent by the world model
-            uint32_t attr_name = std::get<0>(*I);
-            std::cerr<<"Disabling on_demand: "<<attr_name<<" with request "<<toString(*request)<<'\n';
+            std::cerr<<"Disabling on_demand: "<<attr_name<<" with request "<<toString(request)<<'\n';
             if (on_demand_on.end() != on_demand_on.find(attr_name)) {
               std::multiset<OnDemandArgs>& uri_set = on_demand_on[attr_name];
-              auto J = std::find_if(uri_set.begin(), uri_set.end(), [&](const OnDemandArgs& ta) {
-                  return ta.request == *request;});
+              auto J = std::find_if(uri_set.begin(), uri_set.end(),
+                  [&](const OnDemandArgs& ta) { return ta.request == request;});
               if (J != uri_set.end()) {
                 OnDemandArgs ta = *J;
                 if (ta.valid) {
@@ -141,7 +154,7 @@ void SolverWorldModel::trackOnDemands() {
   }
 }
 
-SolverWorldModel::SolverWorldModel(std::string ip, uint16_t port, std::vector<std::pair<u16string, bool>>& types, std::u16string origin) : s(AF_INET, SOCK_STREAM, 0, port, ip), ss(s) {
+SolverWorldModel::SolverWorldModel(std::string ip, uint16_t port, std::vector<std::pair<std::u16string, bool>>& types, std::u16string origin) : s(AF_INET, SOCK_STREAM, 0, port, ip), ss(s) {
   this->origin = origin;
   //Store the alias types that this solver will use
   for (auto I = types.begin(); I != types.end(); ++I) {
@@ -168,7 +181,7 @@ SolverWorldModel::~SolverWorldModel() {
   }
 }
 
-void SolverWorldModel::addTypes(std::vector<std::pair<u16string, bool>>& new_types) {
+void SolverWorldModel::addTypes(std::vector<std::pair<std::u16string, bool>>& new_types) {
   //Store the alias types that this solver will use
 	std::vector<world_model::solver::AliasType> new_aliases;
   for (auto I = new_types.begin(); I != new_types.end(); ++I) {
@@ -195,7 +208,7 @@ bool SolverWorldModel::connected() {
   return _connected;
 }
 
-void SolverWorldModel::sendData(std::vector<Solution>& solution, bool create_uris) {
+void SolverWorldModel::sendData(std::vector<AttrUpdate>& solution, bool create_uris) {
   using world_model::solver::SolutionData;
   std::vector<SolutionData> sds;
   for (auto I = solution.begin(); I != solution.end(); ++I) {

@@ -23,11 +23,11 @@
  * as a client.
  ******************************************************************************/
 
-#include <client_world_connection.hpp>
-#include <grail_sock_server.hpp>
-#include <netbuffer.hpp>
-#include <simple_sockets.hpp>
-#include <world_model_protocol.hpp>
+#include "client_world_connection.hpp"
+
+#include <owl/netbuffer.hpp>
+#include <owl/simple_sockets.hpp>
+#include <owl/world_model_protocol.hpp>
 
 #include <algorithm>
 #include <functional>
