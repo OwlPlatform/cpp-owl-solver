@@ -1,6 +1,7 @@
 SET(IncludeFiles
   client_world_connection.hpp
   solver_world_connection.hpp
+  solver_aggregator_connection.hpp
 )
 
 #Need to install all of the include files
