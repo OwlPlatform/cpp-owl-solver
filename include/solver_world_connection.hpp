@@ -20,7 +20,8 @@
 
 /*******************************************************************************
  * This file defines a class that simplifies connecting to the world model
- * as a solver.
+ * as a solver, maintaining thread safety with messages, and sending keep
+ * alive packets to maintain a solver-world model connection.
  ******************************************************************************/
 
 #ifndef __SOLVER_WORLD_CONNECTION_HPP__
@@ -86,6 +87,11 @@ class SolverWorldModel {
     MessageReceiver ss;
     std::string ip;
     uint16_t port;
+    /**
+     * Mutex that should be locked before sending data from the socket.
+     * This keeps the SolverConnection class thread safe.
+     */
+    std::mutex send_mutex;
 
     bool _connected;
   public:

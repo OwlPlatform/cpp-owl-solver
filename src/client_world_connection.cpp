@@ -298,6 +298,13 @@ void ClientWorldConnection::receiveThread() {
           I->second.push(new promise<WorldState>());
         }
       }
+      else if ( MessageID::keep_alive == message_type) {
+        //Send a keep alive message in reply to a keep alive from
+        //the server. This makes sure that we are replying at less
+        //than the sever's timeout period.
+        std::unique_lock<std::mutex> lck(out_mutex);
+        s.send(client::makeKeepAlive());
+      }
     }
   }
 }

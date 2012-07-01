@@ -153,6 +153,13 @@ void SolverWorldModel::trackOnDemands() {
           }
         }
       }
+      else if (message_type == MessageID::keep_alive) {
+        //Send a keep alive message in reply to a keep alive from
+        //the server. This makes sure that we are replying at less
+        //than the sever's timeout period.
+        std::unique_lock<std::mutex> lck(send_mutex);
+        s.send(world_model::solver::makeKeepAlive());
+      }
     }
     else {
       std::cerr<<"Got an invalid sized message (size = "<<in_buff.size()<<'\n';
@@ -203,6 +210,7 @@ void SolverWorldModel::addTypes(std::vector<std::pair<std::u16string, bool>>& ne
   }
   //Update the world model with a new type announcement message
   try {
+    std::unique_lock<std::mutex> lck(send_mutex);
     s.send(world_model::solver::makeTypeAnnounceMsg(new_aliases, origin));
   }
   catch (std::runtime_error err) {
@@ -245,26 +253,32 @@ void SolverWorldModel::sendData(std::vector<AttrUpdate>& solution, bool create_u
 
   //Allow sending an empty message (if all of the solutions are unrequested
   //on_demand solutions) to serve as a keep alive.
+  std::unique_lock<std::mutex> lck(send_mutex);
   s.send(world_model::solver::makeSolutionMsg(create_uris, sds));
 }
 
 void SolverWorldModel::createURI(world_model::URI uri, world_model::grail_time created) {
+  std::unique_lock<std::mutex> lck(send_mutex);
   s.send(world_model::solver::makeCreateURI(uri, created, origin));
 }
 
 void SolverWorldModel::expireURI(world_model::URI uri, world_model::grail_time expires) {
+  std::unique_lock<std::mutex> lck(send_mutex);
   s.send(world_model::solver::makeExpireURI(uri, expires, origin));
 }
 
 void SolverWorldModel::deleteURI(world_model::URI uri) {
+  std::unique_lock<std::mutex> lck(send_mutex);
   s.send(world_model::solver::makeDeleteURI(uri, origin));
 }
 
 void SolverWorldModel::expireURIAttribute(world_model::URI uri, std::u16string name, world_model::grail_time expires) {
+  std::unique_lock<std::mutex> lck(send_mutex);
   s.send(world_model::solver::makeExpireAttribute(uri, name, origin, expires));
 }
 
 void SolverWorldModel::deleteURIAttribute(world_model::URI uri, std::u16string name) {
+  std::unique_lock<std::mutex> lck(send_mutex);
   s.send(world_model::solver::makeDeleteAttribute(uri, name, origin));
 }
 
