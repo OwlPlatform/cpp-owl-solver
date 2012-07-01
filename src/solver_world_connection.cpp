@@ -78,6 +78,12 @@ bool SolverWorldModel::reconnect() {
     return false;
   }
 
+  //Clear the old thread if one was running
+  if (running) {
+    interrupted = true;
+    on_demand_tracker.join();
+  }
+
   ss.previous_unfinished.clear();
   running = true;
   interrupted = false;
