@@ -168,6 +168,7 @@ void SolverWorldModel::trackOnDemands() {
 }
 
 SolverWorldModel::SolverWorldModel(std::string ip, uint16_t port, std::vector<std::pair<std::u16string, bool>>& types, std::u16string origin) : s(AF_INET, SOCK_STREAM, 0, port, ip), ss(s) {
+  running = false;
   this->origin = origin;
   //Store the alias types that this solver will use
   for (auto I = types.begin(); I != types.end(); ++I) {
