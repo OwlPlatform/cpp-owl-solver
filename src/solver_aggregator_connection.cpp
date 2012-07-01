@@ -45,11 +45,13 @@ void grailAggregatorThread(uint32_t port, std::string ip, std::vector<Subscripti
     std::function<void (SampleData&)> packCallback, std::mutex& callback_mutex,
     SolverAggregator::interrupt_type& interrupted) {
 
+  //std::cerr<<"Starting aggregator thread\n";
   while (SolverAggregator::interrupt_type::none == interrupted) {
+    //std::cerr<<"Entering aggregator thread loop\n";
     try {
       ClientSocket cs(AF_INET, SOCK_STREAM, 0, port, ip);
       if (cs) {
-        std::cerr<<"Connected to the GRAIL aggregator.\n";
+        //std::cerr<<"Connected to the GRAIL aggregator.\n";
 
         //Try to get the handshake message
         {
@@ -126,10 +128,12 @@ void grailAggregatorThread(uint32_t port, std::string ip, std::vector<Subscripti
     } catch (std::exception& err) {
       std::cerr<<"Error in grail aggregator connection: "<<err.what()<<'\n';
     }
+    std::cerr<<"Error in aggregator connection, waiting 1 second to retry...\n";
 
     //Sleep for one second, then try connecting to the server again.
     sleep(1);
   }
+  //std::cerr<<"Leaving aggregator thread\n";
 }
 
 
