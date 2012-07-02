@@ -18,11 +18,14 @@
  * or visit http://www.gnu.org/licenses/gpl-2.0.html
  */
 
-/*******************************************************************************
+/**
+ * @file solver_world_connection.hpp
  * This file defines a class that simplifies connecting to the world model
  * as a solver, maintaining thread safety with messages, and sending keep
  * alive packets to maintain a solver-world model connection.
- ******************************************************************************/
+ *
+ * @author Bernhard Firner
+ */
 
 #ifndef __SOLVER_WORLD_CONNECTION_HPP__
 #define __SOLVER_WORLD_CONNECTION_HPP__
@@ -55,9 +58,9 @@ class SolverWorldModel {
       world_model::URI target;
       std::vector<uint8_t> data;
     };
-    typedef std::map<world_model::URI, std::vector<world_model::Attribute>> world_state;
+
   private:
-    ///On-demand requests from clients that the world model forwards
+    ///On-demand requests from clients. These are forwarded from the world model
     struct OnDemandArgs {
       std::u16string request;
       regex_t exp;
@@ -66,6 +69,7 @@ class SolverWorldModel {
         return request < other.request;
       }
     };
+
     ///Send a handshake and a type declaration message.
     bool reconnect();
 
@@ -80,13 +84,15 @@ class SolverWorldModel {
 
     std::vector<world_model::solver::AliasType> types;
     std::map<std::u16string, uint32_t> aliases;
-    //This solver's origin string
+
+    ///This solver's origin string
     std::u16string origin;
 
     ClientSocket s;
     MessageReceiver ss;
     std::string ip;
     uint16_t port;
+
     /**
      * Mutex that should be locked before sending data from the socket.
      * This keeps the SolverConnection class thread safe.
@@ -102,6 +108,7 @@ class SolverWorldModel {
      * OnDemand types are indicated with a true boolean value in their pairs.
      */
     SolverWorldModel(std::string ip, uint16_t port, std::vector<std::pair<std::u16string, bool>>& types, std::u16string origin);
+
     ~SolverWorldModel();
 
     /*

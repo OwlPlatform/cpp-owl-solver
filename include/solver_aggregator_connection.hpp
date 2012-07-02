@@ -74,16 +74,21 @@ class SolverAggregator {
     interrupt_type interrupted;
   public:
     /**
-     * Create a connection from a list of @servers and send new packets
-     * to the @packCallback as they arrive. Calls to the callback will
+     * Create a connection from a list of servers and send new packets
+     * to the packCallback as they arrive. Calls to the callback will
      * be protected by a mutex so the callback does not need to be thread safe.
+     * \param subscription The intitial subscription to send to the aggregator.
      */
     SolverAggregator(const std::vector<NetTarget>& servers, std::function<void (SampleData&)> packCallback);
+
     ~SolverAggregator();
+
     ///Add a new subscription request to current connections.
     void addRules(aggregator_solver::Subscription subscription);
+
     ///Disconnect from all aggregators and reconnect with a new set of subscriptions.
     void updateRules(aggregator_solver::Subscription subscription);
+
     ///Disconnect from all aggregators.
     void disconnect(); 
 };
