@@ -170,9 +170,8 @@ void grailAggregatorConnect(const std::vector<SolverAggregator::NetTarget>& serv
   }
 }
 
-SolverAggregator::SolverAggregator(const std::vector<NetTarget>& servers, std::function<void (SampleData&)> packCallback) {
-  this->packCallback = packCallback;
-  this->servers = servers;
+SolverAggregator::SolverAggregator(const std::vector<NetTarget>& servers,
+    std::function<void (SampleData&)> packCallback) : servers(servers), packCallback(packCallback) {
   interrupted = interrupt_type::none;
   //Don't establish connections until rules are provided from a call to update rules.
 }
