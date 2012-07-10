@@ -46,7 +46,7 @@ void grailAggregatorThread(uint32_t port, std::string ip, std::vector<Subscripti
     SolverAggregator::interrupt_type& interrupted) {
 
   //std::cerr<<"Starting aggregator thread\n";
-  while (SolverAggregator::interrupt_type::none == interrupted) {
+  while (SolverAggregator::interrupt_type::close_connection != interrupted) {
     //std::cerr<<"Entering aggregator thread loop\n";
     try {
       ClientSocket cs(AF_INET, SOCK_STREAM, 0, port, ip);
