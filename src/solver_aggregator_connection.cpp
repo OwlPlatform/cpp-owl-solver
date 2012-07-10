@@ -41,15 +41,20 @@
 #include <owl/aggregator_solver_protocol.hpp>
 using aggregator_solver::Subscription;
 
-void grailAggregatorThread(uint32_t port, std::string ip, std::vector<Subscription>& subscriptions,
-    std::function<void (SampleData&)> packCallback, std::mutex& callback_mutex,
-    SolverAggregator::interrupt_type& interrupted) {
+void grailAggregatorThread(uint32_t port, std::string ip, std::vector<Subscription>* subscriptions_p,
+    std::function<void (SampleData&)> packCallback, std::mutex* callback_mutex_p,
+    SolverAggregator::interrupt_type* interrupted_p) {
+  std::vector<Subscription>& subscriptions = *subscriptions_p;
+  std::mutex& callback_mutex = *callback_mutex_p;
+  SolverAggregator::interrupt_type& interrupted = *interrupted_p;
 
-  //std::cerr<<"Starting aggregator thread\n";
+  std::cerr<<"Starting aggregator thread\n";
   while (SolverAggregator::interrupt_type::none == interrupted) {
-    //std::cerr<<"Entering aggregator thread loop\n";
+    std::cerr<<"Entering aggregator thread loop\n";
     try {
+      std::cerr<<"Making a client socket for the aggregator connection\n";
       ClientSocket cs(AF_INET, SOCK_STREAM, 0, port, ip);
+      std::cerr<<"finished\n";
       if (cs) {
         //std::cerr<<"Connected to the GRAIL aggregator.\n";
 
@@ -83,6 +88,7 @@ void grailAggregatorThread(uint32_t port, std::string ip, std::vector<Subscripti
         //add_subscription interrupt messages.
         int sent_subscriptions = 0;
         for (auto sub = subscriptions.begin(); sub != subscriptions.end(); ++sub) {
+          std::cerr<<"Sending subscription request outside of loop\n";
           //Send a request message
           std::vector<unsigned char> req_buff = makeSubscribeReqMsg(*sub);
           cs.send(req_buff);
@@ -133,7 +139,7 @@ void grailAggregatorThread(uint32_t port, std::string ip, std::vector<Subscripti
     //Sleep for one second, then try connecting to the server again.
     sleep(1);
   }
-  //std::cerr<<"Leaving aggregator thread\n";
+  std::cerr<<"Leaving aggregator thread\n";
 }
 
 
@@ -152,7 +158,7 @@ void grailAggregatorConnect(const std::vector<SolverAggregator::NetTarget>& serv
   for (auto server = servers.begin(); server != servers.end(); ++server) {
     try {
       server_threads.push_back(std::thread(grailAggregatorThread, server->port,
-            server->ip, std::ref(subscriptions), packCallback, std::ref(callback_mutex), std::ref(interrupted)));
+            server->ip, &subscriptions, packCallback, &callback_mutex, &interrupted));
     }
     catch (std::system_error& err) {
       std::cerr<<"Error in grail aggregator connection: "<<err.code().message()<<
@@ -204,11 +210,12 @@ void SolverAggregator::addRules(aggregator_solver::Subscription subscription) {
   //If addRules is called but there are no open connections then connect
   //for the first time
   if (server_threads.empty()) {
+    std::cerr<<"Connecting for first time!\n";
     interrupted = interrupt_type::none;
     for (auto server = servers.begin(); server != servers.end(); ++server) {
       try {
         server_threads.push_back(std::thread(grailAggregatorThread, server->port,
-              server->ip, std::ref(this->subscriptions), packCallback, std::ref(callback_mutex), std::ref(interrupted)));
+              server->ip, &this->subscriptions, packCallback, &callback_mutex, &interrupted));
       }
       catch (std::system_error& err) {
         std::cerr<<"Error in grail aggregator connection: "<<err.code().message()<<
@@ -243,7 +250,7 @@ void SolverAggregator::updateRules(aggregator_solver::Subscription subscription)
   for (auto server = servers.begin(); server != servers.end(); ++server) {
     try {
       server_threads.push_back(std::thread(grailAggregatorThread, server->port,
-            server->ip, std::ref(this->subscriptions), packCallback, std::ref(callback_mutex), std::ref(interrupted)));
+            server->ip, &this->subscriptions, packCallback, &callback_mutex, &interrupted));
     }
     catch (std::system_error& err) {
       std::cerr<<"Error in grail aggregator connection: "<<err.code().message()<<
