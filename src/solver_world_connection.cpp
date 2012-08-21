@@ -29,6 +29,7 @@
 #include <iostream>
 #include <string>
 #include <tuple>
+#include <unistd.h>
 #include <vector>
 
 #include <sys/types.h>
@@ -36,8 +37,6 @@
 
 //Send a handshake and a type declaration message.
 bool SolverWorldModel::reconnect() {
-  //Reset connection status and set to true after the handshake.
-  _connected = false;
   if (s) {
     std::cout<<"Connected to the GRAIL world model.\n";
   } else {
@@ -89,8 +88,35 @@ bool SolverWorldModel::reconnect() {
   interrupted = false;
   //Start the on_demand status tracking thread
   on_demand_tracker = std::thread(std::mem_fun(&SolverWorldModel::trackOnDemands), this);
-  _connected = true;
   return true;
+}
+
+void SolverWorldModel::sendAndReconnect(const std::vector<unsigned char>& buff) {
+  bool sent = false;
+  bool first_wait = true;
+  int wait_time = 1;
+  while (not sent) {
+    if (not first_wait) {
+      //std::cerr<<"Sleeping for "<<wait_time<<" seconds\n";
+      sleep(wait_time);
+      wait_time = 8;
+    }
+    //std::cerr<<"Checking connection\n";
+    if (not s) {
+      //std::cerr<<"Trying to reconnect\n";
+      reconnect();
+    }
+    else {
+      try {
+        s.send(buff);
+        sent = true;
+      }
+      catch (std::runtime_error& err) {
+        std::cerr<<"Problem with solver world model connection: "<<err.what()<<'\n';
+      }
+    }
+    first_wait = false;
+  }
 }
 
 static std::string toString(const std::u16string& str) {
@@ -99,71 +125,78 @@ static std::string toString(const std::u16string& str) {
 
 void SolverWorldModel::trackOnDemands() {
   using world_model::solver::MessageID;
-  while (not interrupted) {
-    std::vector<unsigned char> in_buff = ss.getNextMessage(interrupted);
-    if (5 <= in_buff.size()) {
-      MessageID message_type = (MessageID)in_buff[4];
-      if (message_type == MessageID::start_on_demand) {
-        std::vector<std::tuple<uint32_t, std::vector<std::u16string>>> trans =
-          world_model::solver::decodeStartOnDemand(in_buff);
-        std::unique_lock<std::mutex> lck(trans_mutex);
-        for (auto I = trans.begin(); I != trans.end(); ++I) {
-          std::cerr<<"OnDemand "<<std::get<0>(*I)<<" has "<<std::get<1>(*I).size()<<" URI requests.\n";
-          std::vector<std::u16string>& requests = std::get<1>(*I);
-          for (std::u16string& request : requests) {
-            //Store the regex pattern sent by the world model.
-            std::cerr<<"Enabling on_demand: "<<std::get<0>(*I)<<" with string "<<toString(request)<<'\n';
+  //Continue processing packets while the connection is open
+  try {
+    while (not interrupted) {
+      std::vector<unsigned char> in_buff = ss.getNextMessage(interrupted);
+      if (5 <= in_buff.size()) {
+        MessageID message_type = (MessageID)in_buff[4];
+        if (message_type == MessageID::start_on_demand) {
+          std::vector<std::tuple<uint32_t, std::vector<std::u16string>>> trans =
+            world_model::solver::decodeStartOnDemand(in_buff);
+          std::unique_lock<std::mutex> lck(trans_mutex);
+          for (auto I = trans.begin(); I != trans.end(); ++I) {
+            std::cerr<<"OnDemand "<<std::get<0>(*I)<<" has "<<std::get<1>(*I).size()<<" URI requests.\n";
+            std::vector<std::u16string>& requests = std::get<1>(*I);
+            for (std::u16string& request : requests) {
+              //Store the regex pattern sent by the world model.
+              std::cerr<<"Enabling on_demand: "<<std::get<0>(*I)<<" with string "<<toString(request)<<'\n';
 
-            OnDemandArgs ta;
-            ta.request = request;
-            int err = regcomp(&ta.exp, toString(ta.request).c_str(), REG_EXTENDED);
-            if (0 != err) {
-              ta.valid = false;
-              std::cerr<<"Error compiling regular expression "<<toString(ta.request)<<" in on_demand request to solver client.\n";
+              OnDemandArgs ta;
+              ta.request = request;
+              int err = regcomp(&ta.exp, toString(ta.request).c_str(), REG_EXTENDED);
+              if (0 != err) {
+                ta.valid = false;
+                std::cerr<<"Error compiling regular expression "<<toString(ta.request)<<" in on_demand request to solver client.\n";
+              }
+              else {
+                ta.valid = true;
+              }
+              on_demand_on[std::get<0>(*I)].insert(ta);
             }
-            else {
-              ta.valid = true;
-            }
-            on_demand_on[std::get<0>(*I)].insert(ta);
           }
         }
-      }
-      else if (message_type == MessageID::stop_on_demand) {
-        std::vector<std::tuple<uint32_t, std::vector<std::u16string>>> trans =
-          world_model::solver::decodeStopOnDemand(in_buff);
-        std::unique_lock<std::mutex> lck(trans_mutex);
-        for (auto I = trans.begin(); I != trans.end(); ++I) {
-          uint32_t attr_name = std::get<0>(*I);
-          std::vector<std::u16string>& requests = std::get<1>(*I);
-          for (std::u16string& request : requests) {
-            //Remove the regex that was sent by the world model
-            std::cerr<<"Disabling on_demand: "<<attr_name<<" with request "<<toString(request)<<'\n';
-            if (on_demand_on.end() != on_demand_on.find(attr_name)) {
-              std::multiset<OnDemandArgs>& uri_set = on_demand_on[attr_name];
-              auto J = std::find_if(uri_set.begin(), uri_set.end(),
-                  [&](const OnDemandArgs& ta) { return ta.request == request;});
-              if (J != uri_set.end()) {
-                OnDemandArgs ta = *J;
-                if (ta.valid) {
-                  regfree(&ta.exp);
+        else if (message_type == MessageID::stop_on_demand) {
+          std::vector<std::tuple<uint32_t, std::vector<std::u16string>>> trans =
+            world_model::solver::decodeStopOnDemand(in_buff);
+          std::unique_lock<std::mutex> lck(trans_mutex);
+          for (auto I = trans.begin(); I != trans.end(); ++I) {
+            uint32_t attr_name = std::get<0>(*I);
+            std::vector<std::u16string>& requests = std::get<1>(*I);
+            for (std::u16string& request : requests) {
+              //Remove the regex that was sent by the world model
+              std::cerr<<"Disabling on_demand: "<<attr_name<<" with request "<<toString(request)<<'\n';
+              if (on_demand_on.end() != on_demand_on.find(attr_name)) {
+                std::multiset<OnDemandArgs>& uri_set = on_demand_on[attr_name];
+                auto J = std::find_if(uri_set.begin(), uri_set.end(),
+                    [&](const OnDemandArgs& ta) { return ta.request == request;});
+                if (J != uri_set.end()) {
+                  OnDemandArgs ta = *J;
+                  if (ta.valid) {
+                    regfree(&ta.exp);
+                  }
+                  uri_set.erase(J);
                 }
-                uri_set.erase(J);
               }
             }
           }
         }
+        else if (message_type == MessageID::keep_alive) {
+          //Send a keep alive message in reply to a keep alive from
+          //the server. This makes sure that we are replying at less
+          //than the sever's timeout period.
+          std::unique_lock<std::mutex> lck(send_mutex);
+          sendAndReconnect(world_model::solver::makeKeepAlive());
+        }
       }
-      else if (message_type == MessageID::keep_alive) {
-        //Send a keep alive message in reply to a keep alive from
-        //the server. This makes sure that we are replying at less
-        //than the sever's timeout period.
-        std::unique_lock<std::mutex> lck(send_mutex);
-        s.send(world_model::solver::makeKeepAlive());
+      else {
+        std::cerr<<"Got an invalid sized message (size = "<<in_buff.size()<<'\n';
       }
     }
-    else {
-      std::cerr<<"Got an invalid sized message (size = "<<in_buff.size()<<'\n';
-    }
+  }
+  catch (std::exception& e) {
+    std::cerr<<"Error with solver connection: "<<e.what()<<'\n';
+    return;
   }
 }
 
@@ -212,7 +245,7 @@ void SolverWorldModel::addTypes(std::vector<std::pair<std::u16string, bool>>& ne
   //Update the world model with a new type announcement message
   try {
     std::unique_lock<std::mutex> lck(send_mutex);
-    s.send(world_model::solver::makeTypeAnnounceMsg(new_aliases, origin));
+    sendAndReconnect(world_model::solver::makeTypeAnnounceMsg(new_aliases, origin));
   }
   catch (std::runtime_error err) {
     std::cerr<<"Problem sending type announce message: "<<err.what()<<'\n';
@@ -220,7 +253,12 @@ void SolverWorldModel::addTypes(std::vector<std::pair<std::u16string, bool>>& ne
 }
 
 bool SolverWorldModel::connected() {
-  return _connected;
+  if (s) {
+    return true;
+  }
+  else {
+    return false;
+  }
 }
 
 void SolverWorldModel::sendData(std::vector<AttrUpdate>& solution, bool create_uris) {
@@ -255,32 +293,32 @@ void SolverWorldModel::sendData(std::vector<AttrUpdate>& solution, bool create_u
   //Allow sending an empty message (if all of the solutions are unrequested
   //on_demand solutions) to serve as a keep alive.
   std::unique_lock<std::mutex> lck(send_mutex);
-  s.send(world_model::solver::makeSolutionMsg(create_uris, sds));
+  sendAndReconnect(world_model::solver::makeSolutionMsg(create_uris, sds));
 }
 
 void SolverWorldModel::createURI(world_model::URI uri, world_model::grail_time created) {
   std::unique_lock<std::mutex> lck(send_mutex);
-  s.send(world_model::solver::makeCreateURI(uri, created, origin));
+  sendAndReconnect(world_model::solver::makeCreateURI(uri, created, origin));
 }
 
 void SolverWorldModel::expireURI(world_model::URI uri, world_model::grail_time expires) {
   std::unique_lock<std::mutex> lck(send_mutex);
-  s.send(world_model::solver::makeExpireURI(uri, expires, origin));
+  sendAndReconnect(world_model::solver::makeExpireURI(uri, expires, origin));
 }
 
 void SolverWorldModel::deleteURI(world_model::URI uri) {
   std::unique_lock<std::mutex> lck(send_mutex);
-  s.send(world_model::solver::makeDeleteURI(uri, origin));
+  sendAndReconnect(world_model::solver::makeDeleteURI(uri, origin));
 }
 
 void SolverWorldModel::expireURIAttribute(world_model::URI uri, std::u16string name, world_model::grail_time expires) {
   std::unique_lock<std::mutex> lck(send_mutex);
-  s.send(world_model::solver::makeExpireAttribute(uri, name, origin, expires));
+  sendAndReconnect(world_model::solver::makeExpireAttribute(uri, name, origin, expires));
 }
 
 void SolverWorldModel::deleteURIAttribute(world_model::URI uri, std::u16string name) {
   std::unique_lock<std::mutex> lck(send_mutex);
-  s.send(world_model::solver::makeDeleteAttribute(uri, name, origin));
+  sendAndReconnect(world_model::solver::makeDeleteAttribute(uri, name, origin));
 }
 
 

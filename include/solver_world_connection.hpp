@@ -73,6 +73,14 @@ class SolverWorldModel {
     ///Send a handshake and a type declaration message.
     bool reconnect();
 
+    /*
+     * Send a message with automatic retries when disconnected.
+     * First retry is immediate, the next is after 1 second,
+     * and then retries are every 8 seconds.
+     * Will block.
+     */
+    void sendAndReconnect(const std::vector<unsigned char>& buff);
+
     ///Thread and variables to monitor on-demand request status.
     std::mutex trans_mutex;
     std::map<uint32_t, std::multiset<OnDemandArgs>> on_demand_on;
@@ -98,8 +106,6 @@ class SolverWorldModel {
      * This keeps the SolverConnection class thread safe.
      */
     std::mutex send_mutex;
-
-    bool _connected;
   public:
 
     /*
