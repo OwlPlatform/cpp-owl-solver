@@ -189,7 +189,16 @@ void ClientWorldConnection::markFinished(uint32_t key) {
  * Returns true upon connection success, false otherwise.
  */
 bool ClientWorldConnection::reconnect() {
-  _connected = false;
+  //Make sure that the rx_thraed isn't running
+  interrupted = true;
+  try {
+    rx_thread.join();
+  }
+  catch (std::exception& e) {
+  }
+  interrupted = false;
+
+  //See if the socket ready but not connected
   if (not s) {
     //Otherwise try to make a new connection
     ClientSocket s2(AF_INET, SOCK_STREAM, 0, port, ip, SOCK_NONBLOCK);
@@ -215,95 +224,116 @@ bool ClientWorldConnection::reconnect() {
     if (not (length == handshake.size() and
           std::equal(handshake.begin(), handshake.end(), raw_message.begin()) )) {
       std::cerr<<"Failure during client handshake with world model.\n";
+      //Clear the socket by assigning a null socket
+      s = std::move(ClientSocket(port, "", -1));
       return false;
     }
   }
 
-  _connected = true;
-
   ss.previous_unfinished.clear();
+
+  //Start a listening thread.
+  std::cerr<<"Started receive thread\n";
+  rx_thread = std::thread(&ClientWorldConnection::receiveThread, this);
 
   return true;
 }
 
 void ClientWorldConnection::receiveThread() {
   using namespace world_model::client;
-  while (not interrupted) {
-    std::vector<unsigned char> raw_message = ss.getNextMessage(interrupted);
-    //size_t piece_length = readPrimitive<uint32_t>(raw_message, 0);
-    if (interrupted) { break;}
-    if (raw_message.size() < 5) {
-      std::cerr<<"Received broken message from client world model.\n";
-      break;
-    }
-
-    //Process this packet if it is valid
-    if ( raw_message.size() >= 5 ) {
-      //Handle the message according to its message type.
-      client::MessageID message_type = (client::MessageID)raw_message[4];
-
-      if ( MessageID::attribute_alias == message_type ) {
-        std::vector<AliasType> aliases = decodeAttrAliasMsg(raw_message);
-        for (auto alias = aliases.begin(); alias != aliases.end(); ++alias) {
-          known_attributes[alias->alias] = alias->type;
-        }
+  std::cerr<<"In receive thread\n";
+  try {
+    while (not interrupted) {
+      std::cerr<<"Running receive thread.\n";
+      std::vector<unsigned char> raw_message = ss.getNextMessage(interrupted);
+      std::cerr<<"Got next message of length "<<raw_message.size()<<'\n';
+      //size_t piece_length = readPrimitive<uint32_t>(raw_message, 0);
+      if (interrupted) { break;}
+      if (raw_message.size() < 5) {
+        std::cerr<<"Received broken message from client world model.\n";
+        break;
       }
-      else if ( MessageID::origin_alias == message_type ) {
-        std::vector<AliasType> aliases = decodeOriginAliasMsg(raw_message);
-        for (auto alias = aliases.begin(); alias != aliases.end(); ++alias) {
-          known_origins[alias->alias] = alias->type;
-        }
-      }
-      else if ( MessageID::request_complete == message_type ) {
-        uint32_t ticket = decodeRequestComplete(raw_message);
-        std::unique_lock<std::mutex> lck(promise_mutex);
-        if (step_promises.find(ticket) != step_promises.end()) {
-          if (single_response.count(ticket) != 0) {
-            auto I = step_promises.find(ticket);
-            I->second.front()->set_value(partial_results[ticket]);
-            partial_results.erase(ticket);
-          }
-          else {
-            //Set the last value to an empty state
-            step_promises.find(ticket)->second.back()->set_value(WorldState());
+
+      //Process this packet if it is valid
+      if ( raw_message.size() >= 5 ) {
+        //Handle the message according to its message type.
+        client::MessageID message_type = (client::MessageID)raw_message[4];
+
+        if ( MessageID::attribute_alias == message_type ) {
+          std::vector<AliasType> aliases = decodeAttrAliasMsg(raw_message);
+          for (auto alias = aliases.begin(); alias != aliases.end(); ++alias) {
+            known_attributes[alias->alias] = alias->type;
           }
         }
-      }
-      else if ( MessageID::data_response == message_type ) {
-        //Convert the aliased world data to unaliased data for the user
-        AliasedWorldData awd;
-        uint32_t ticket;
-        std::tie(awd, ticket) = decodeDataMessage(raw_message);
-        WorldData wd;
-        wd.object_uri = awd.object_uri;
-        std::for_each(awd.attributes.begin(), awd.attributes.end(),
-            [&](AliasedAttribute& attr) {
+        else if ( MessageID::origin_alias == message_type ) {
+          std::vector<AliasType> aliases = decodeOriginAliasMsg(raw_message);
+          for (auto alias = aliases.begin(); alias != aliases.end(); ++alias) {
+            known_origins[alias->alias] = alias->type;
+          }
+        }
+        else if ( MessageID::request_complete == message_type ) {
+          uint32_t ticket = decodeRequestComplete(raw_message);
+          std::unique_lock<std::mutex> lck(promise_mutex);
+          if (step_promises.find(ticket) != step_promises.end()) {
+            if (single_response.count(ticket) != 0) {
+              auto I = step_promises.find(ticket);
+              I->second.front()->set_value(partial_results[ticket]);
+              partial_results.erase(ticket);
+            }
+            else {
+              //Set the last value to an empty state
+              step_promises.find(ticket)->second.back()->set_value(WorldState());
+            }
+          }
+        }
+        else if ( MessageID::data_response == message_type ) {
+          //Convert the aliased world data to unaliased data for the user
+          AliasedWorldData awd;
+          uint32_t ticket;
+          std::tie(awd, ticket) = decodeDataMessage(raw_message);
+          WorldData wd;
+          wd.object_uri = awd.object_uri;
+          std::for_each(awd.attributes.begin(), awd.attributes.end(),
+              [&](AliasedAttribute& attr) {
               wd.attributes.push_back(Attribute{known_attributes[attr.name_alias],
-                                                attr.creation_date,
-                                                attr.expiration_date,
-                                                known_origins[attr.origin_alias],
-                                                attr.data}); });
-        //Now give this world data to the partial result if this is for a
-        //Response, or give it directly to a StepResponse
-        std::unique_lock<std::mutex> lck(promise_mutex);
-        if (single_response.count(ticket) != 0) {
-          partial_results[ticket][wd.object_uri] = wd.attributes;
+                attr.creation_date,
+                attr.expiration_date,
+                known_origins[attr.origin_alias],
+                attr.data}); });
+          //Now give this world data to the partial result if this is for a
+          //Response, or give it directly to a StepResponse
+          std::unique_lock<std::mutex> lck(promise_mutex);
+          if (single_response.count(ticket) != 0) {
+            partial_results[ticket][wd.object_uri] = wd.attributes;
+          }
+          else if (step_promises.find(ticket) != step_promises.end()) {
+            //Set the value of the last entry and make a new promise for the next entry
+            WorldState ws;
+            ws[wd.object_uri] = wd.attributes;
+            auto I = step_promises.find(ticket);
+            I->second.back()->set_value(ws);
+            I->second.push(new promise<WorldState>());
+          }
         }
-        else if (step_promises.find(ticket) != step_promises.end()) {
-          //Set the value of the last entry and make a new promise for the next entry
-          WorldState ws;
-          ws[wd.object_uri] = wd.attributes;
-          auto I = step_promises.find(ticket);
-          I->second.back()->set_value(ws);
-          I->second.push(new promise<WorldState>());
+        else if ( MessageID::keep_alive == message_type) {
+          //Send a keep alive message in reply to a keep alive from
+          //the server. This makes sure that we are replying at less
+          //than the sever's timeout period.
+          std::unique_lock<std::mutex> lck(out_mutex);
+          s.send(client::makeKeepAlive());
         }
       }
-      else if ( MessageID::keep_alive == message_type) {
-        //Send a keep alive message in reply to a keep alive from
-        //the server. This makes sure that we are replying at less
-        //than the sever's timeout period.
-        std::unique_lock<std::mutex> lck(out_mutex);
-        s.send(client::makeKeepAlive());
+    }
+  }
+  //Catch a network error and mark all of the promises invalid
+  catch (std::runtime_error& err) {
+    std::unique_lock<std::mutex> lck(promise_mutex);
+    for (auto& ticket_promise : step_promises) {
+      //TODO FIXME Can't find make_exception_ptr anywhere so using throwing and catching to get a pointer
+      try {
+        throw std::runtime_error("Connection Closed");
+      } catch (std::exception e) {
+        ticket_promise.second.back()->set_exception(std::current_exception());
       }
     }
   }
@@ -318,9 +348,6 @@ ClientWorldConnection::ClientWorldConnection(std::string ip, uint16_t port) : s(
 
   interrupted = false;
   reconnect();
-
-  //Start a listening thread.
-  rx_thread = std::thread(&ClientWorldConnection::receiveThread, this);
 }
 
 ClientWorldConnection::~ClientWorldConnection() {
@@ -397,7 +424,7 @@ Response ClientWorldConnection::snapshotRequest(const client::Request& request) 
   }
   Response r(makePromise(ticket), *this, ticket);
   std::unique_lock<std::mutex> lck(out_mutex);
-  if (not _connected and not reconnect()) {
+  if (not s and not reconnect()) {
     setError(ticket, "not connected");
   }
   else {
@@ -422,7 +449,7 @@ Response ClientWorldConnection::rangeRequest(const client::Request& request) {
   }
   Response r(makePromise(ticket), *this, ticket);
   std::unique_lock<std::mutex> lck(out_mutex);
-  if (not _connected and not reconnect()) {
+  if (not s and not reconnect()) {
     setError(ticket, "not connected");
   }
   else {
@@ -450,7 +477,7 @@ StepResponse ClientWorldConnection::streamRequest(const URI& uri, const vector<u
   }
   StepResponse r(makeStepPromise(ticket), *this, ticket);
   std::unique_lock<std::mutex> lck(out_mutex);
-  if (not _connected and not reconnect()) {
+  if (not s and not reconnect()) {
     setError(ticket, "not connected");
   }
   else {
@@ -469,7 +496,12 @@ StepResponse ClientWorldConnection::streamRequest(const URI& uri, const vector<u
  * false otherwise.
  */
 bool ClientWorldConnection::connected() {
-  return _connected;
+  if (s) {
+    return true;
+  }
+  else {
+    return false;
+  }
 }
 
 

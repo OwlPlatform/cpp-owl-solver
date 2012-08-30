@@ -121,7 +121,7 @@ class StepResponse {
     ///Get the next data set or block until it is available and then return it.
     world_model::WorldState next();
 
-    ///Returns true if a call to next() will not block.
+    ///Returns true if a call to next() will not block. (TODO FIXME Returns true if there is no error -- documentation problem?)
     bool hasNext();
 
     /**
@@ -200,7 +200,6 @@ class ClientWorldConnection {
     uint16_t port;
     std::map<uint32_t, std::u16string> known_attributes;
     std::map<uint32_t, std::u16string> known_origins;
-    bool _connected;
     bool interrupted;
 
     void receiveThread();
