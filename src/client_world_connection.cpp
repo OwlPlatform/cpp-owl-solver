@@ -241,12 +241,11 @@ bool ClientWorldConnection::reconnect() {
 
 void ClientWorldConnection::receiveThread() {
   using namespace world_model::client;
-  std::cerr<<"In receive thread\n";
+  std::cerr<<"Starting client->wm receive thread.\n";
   try {
     while (not interrupted) {
-      std::cerr<<"Running receive thread.\n";
       std::vector<unsigned char> raw_message = ss.getNextMessage(interrupted);
-      std::cerr<<"Got next message of length "<<raw_message.size()<<'\n';
+      //std::cerr<<"Got next message of length "<<raw_message.size()<<'\n';
       //size_t piece_length = readPrimitive<uint32_t>(raw_message, 0);
       if (interrupted) { break;}
       if (raw_message.size() < 5) {
