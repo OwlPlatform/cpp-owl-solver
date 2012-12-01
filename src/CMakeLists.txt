@@ -5,7 +5,7 @@ SET(SourceFiles
 )
 
 add_library (owl-solver SHARED ${SourceFiles})
-target_link_libraries (owl-solver owl-common owl-solver)
+target_link_libraries (owl-solver owl-common)
 set (FULLVERSION ${LibOwlSolver_VERSION_MAJOR}.${LibOwlSolver_VERSION_MINOR}.${LibOwlSolver_VERSION_REVISION})
 SET_TARGET_PROPERTIES(owl-solver PROPERTIES VERSION ${FULLVERSION} SOVERSION ${FULLVERSION})
 
