@@ -9,7 +9,7 @@ set (LibOwlSolver_VERSION_REVISION 0)
 # Adding the link command to libowl in this line.
 # Should technically run a bunch of cmake scripts to discover where libowl
 # was installed.
-set(CMAKE_CXX_FLAGS "-O2 -std=c++0x -Wall -Wextra -Wno-sign-compare -lowl")
+set(CMAKE_CXX_FLAGS "-O2 -std=c++0x -Wall -Wextra -Wno-sign-compare")
 
 FIND_PATH(OWL_INC_DIR NAMES owl PATHS /usr/include /usr/local/include)
 IF(NOT OWL_INC_DIR)
