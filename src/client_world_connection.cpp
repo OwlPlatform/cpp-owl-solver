@@ -36,6 +36,8 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <future>
+#include <chrono>
 
 #include <iostream>
 
@@ -72,7 +74,13 @@ world_model::WorldState Response::get() {
 };
 
 bool Response::ready() {
-  return data.valid();
+	if (not data.valid()) {
+		return false;
+	}
+	else {
+		//Check if the data is ready immediately
+		return std::future_status::ready == data.wait_for(std::chrono::seconds(0));
+	}
 }
 
 bool Response::isError() {
@@ -90,11 +98,18 @@ world_model::WorldState StepResponse::next() {
   if (isError()) {
     throw getError();
   }
-  world_model::WorldState wd = data.get();
-  if (cwc.hasNextFuture(request_key)) {
-    data = cwc.getNextFuture(request_key);
-  }
-  return wd;
+	//If a next future wasn't available after the last request then this is invalid
+	if (data.valid()) {
+		world_model::WorldState wd = data.get();
+		//Update the future
+		if (cwc.hasNextFuture(request_key)) {
+			data = cwc.getNextFuture(request_key);
+		}
+		return wd;
+	}
+	else {
+		throw std::logic_error("Next value requested for request without a valid request.");
+	}
 };
 
 StepResponse::~StepResponse() {
@@ -104,7 +119,13 @@ StepResponse::~StepResponse() {
 }
 
 bool StepResponse::hasNext() {
-  return data.valid();
+	if (not data.valid()) {
+		return false;
+	}
+	else {
+		//Check if the data is ready immediately
+		return std::future_status::ready == data.wait_for(std::chrono::seconds(0));
+	}
 }
 
 bool StepResponse::isError() {
