@@ -81,13 +81,25 @@ class SolverWorldModel {
      */
     void sendAndReconnect(const std::vector<unsigned char>& buff);
 
-    ///Thread and variables to monitor on-demand request status.
+    ///Lock for thread and variables to monitor on-demand request status.
     std::mutex trans_mutex;
+    /**
+     * A map from type aliases to a set of requests, remembering if these types
+     * should be sent.
+     * */
     std::map<uint32_t, std::multiset<OnDemandArgs>> on_demand_on;
+    ///Thread that runs the trackOnDemands process
     std::thread on_demand_tracker;
+    ///True when threaded operations should stop
     bool interrupted;
+    ///True when threaded trackOnDemands process is running
     bool running;
 
+    /**
+     * A function to run in its own thread that handles messages from the
+     * world model. This handles the messages "start_on_demand,"
+     * "stop_on_demand," and "keep_alive"
+     * */
     void trackOnDemands();
 
     std::vector<world_model::solver::AliasType> types;

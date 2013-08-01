@@ -270,7 +270,7 @@ void SolverWorldModel::sendData(std::vector<AttrUpdate>& solution, bool create_u
       uint32_t alias = aliases[I->type];
       //TODO Let the user check this themselves, it should be up to them
       //whether or not to send data
-      //Send if this is not a on_demand or it is a on_demand but is requested
+      //Send if this is not an on_demand or it is an on_demand but is requested
       if (on_demand_on.end() == on_demand_on.find(alias)) {
         SolutionData sd{alias, I->time, I->target, I->data};
         sds.push_back(sd);
