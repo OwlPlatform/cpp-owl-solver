@@ -79,7 +79,7 @@ bool Response::ready() {
 	}
 	else {
 		//Check if the data is ready immediately
-		return std::future_status::ready == data.wait_for(std::chrono::seconds(0));
+		return std::future_status::ready == (std::future_status)data.wait_for(std::chrono::seconds(0));
 	}
 }
 
@@ -124,7 +124,7 @@ bool StepResponse::hasNext() {
 	}
 	else {
 		//Check if the data is ready immediately
-		return std::future_status::ready == data.wait_for(std::chrono::seconds(0));
+		return std::future_status::ready == (std::future_status)data.wait_for(std::chrono::seconds(0));
 	}
 }
 
